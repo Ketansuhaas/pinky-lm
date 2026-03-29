@@ -1,25 +1,28 @@
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, asdict
 
 import torch
 import torch.nn.functional as F
+import wandb
 
 from dataset import make_loaders
 
 
 @dataclass
 class TrainerConfig:
-    steps      : int   = 5000
-    eval_every : int   = 500
-    block_size : int   = 128
-    batch_size : int   = 32
-    lr         : float = 1e-3
-    grad_clip  : float = 1.0
-    device     : str   = 'cpu'
+    steps          : int   = 5000
+    eval_every     : int   = 500
+    block_size     : int   = 128
+    batch_size     : int   = 32
+    lr             : float = 1e-3
+    grad_clip      : float = 1.0
+    device         : str   = 'cpu'
     ckpt_dir       : str   = 'checkpoints'
     train_path     : str   = ''
     val_path       : str   = ''
     max_val_batches: int   = 100
+    wandb_project  : str   = 'pinky-lm'
+    wandb_run_name : str   = ''
 
 
 class Trainer:
@@ -36,6 +39,14 @@ class Trainer:
         self.train_loader = train_loader
         self.val_loader   = val_loader
         self.train_iter   = iter(train_loader)
+
+        wandb.init(
+            project=config.wandb_project,
+            name=config.wandb_run_name or None,
+            config=asdict(config),
+            mode='online',
+            dir='/tmp',
+        )
 
     def _next_batch(self):
         try:
@@ -80,8 +91,8 @@ class Trainer:
         print(f"  checkpoint saved → {path}")
 
     def run(self):
-        cfg         = self.config
-        train_loss  = 0.0
+        cfg        = self.config
+        train_loss = 0.0
 
         for _ in range(cfg.steps):
             self.step  += 1
@@ -91,5 +102,8 @@ class Trainer:
                 val_loss   = self._evaluate()
                 train_loss /= cfg.eval_every
                 print(f"step {self.step:5d} | train loss {train_loss:.4f} | val loss {val_loss:.4f}")
+                wandb.log({'train_loss': train_loss, 'val_loss': val_loss}, step=self.step)
                 self.save_checkpoint()
                 train_loss = 0.0
+
+        wandb.finish()

@@ -1,6 +1,9 @@
+import glob
+import os
+
 import numpy as np
 import torch
-from torch.utils.data import Dataset, DataLoader
+from torch.utils.data import Dataset, DataLoader, ConcatDataset
 
 
 class BinDataset(Dataset):
@@ -17,9 +20,18 @@ class BinDataset(Dataset):
         return x, y
 
 
+def load_dataset(path, block_size, split):
+    if os.path.isdir(path):
+        files = sorted(glob.glob(os.path.join(path, f'fineweb_{split}_*.bin')))
+        if not files:
+            raise FileNotFoundError(f"No {split} shards found in {path}")
+        return ConcatDataset([BinDataset(f, block_size) for f in files])
+    return BinDataset(path, block_size)
+
+
 def make_loaders(block_size, batch_size, train_path, val_path):
-    train_ds = BinDataset(train_path, block_size)
-    val_ds   = BinDataset(val_path,   block_size)
+    train_ds = load_dataset(train_path, block_size, split='train')
+    val_ds   = load_dataset(val_path,   block_size, split='val')
     train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=False, drop_last=True)
     val_loader   = DataLoader(val_ds,   batch_size=batch_size, shuffle=False, drop_last=True)
     return train_loader, val_loader

@@ -1,3 +1,4 @@
+.env
 checkpoints/
 data/datasets/
 data/tokenizers/

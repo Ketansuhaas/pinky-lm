@@ -10,8 +10,8 @@ from trainer   import Trainer, TrainerConfig
 def parse_args():
     parser = argparse.ArgumentParser(description='Train PinkyLM on FineWeb')
     parser.add_argument('--tokenizer',   default='data/tokenizers/fineweb_1024_bpe.model')
-    parser.add_argument('--train',       default='data/datasets/fineweb10B_sp1024/fineweb_train_000000.bin')
-    parser.add_argument('--val',         default='data/datasets/fineweb10B_sp1024/fineweb_val_000000.bin')
+    parser.add_argument('--train',       default='data/datasets/fineweb10B_sp1024')
+    parser.add_argument('--val',         default='data/datasets/fineweb10B_sp1024')
     parser.add_argument('--steps',       type=int,   default=5000)
     parser.add_argument('--eval-every',  type=int,   default=500)
     parser.add_argument('--block-size',  type=int,   default=128)
@@ -22,6 +22,8 @@ def parse_args():
     parser.add_argument('--n-layers',    type=int,   default=4)
     parser.add_argument('--ckpt-dir',        default='checkpoints')
     parser.add_argument('--max-val-batches', type=int, default=100)
+    parser.add_argument('--wandb-project',  default='pinky-lm')
+    parser.add_argument('--wandb-run-name', default='')
     return parser.parse_args()
 
 
@@ -52,6 +54,8 @@ if __name__ == '__main__':
         train_path=args.train,
         val_path=args.val,
         max_val_batches=args.max_val_batches,
+        wandb_project=args.wandb_project,
+        wandb_run_name=args.wandb_run_name,
     )
     trainer = Trainer(model, config)
     trainer.run()
