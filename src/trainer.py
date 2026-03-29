@@ -9,7 +9,7 @@ import torch
 import torch.nn.functional as F
 import wandb
 
-from dataset import make_loaders
+from src.dataset import make_loaders
 
 
 @dataclass

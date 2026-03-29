@@ -14,9 +14,9 @@ from pathlib import Path
 import torch
 import torch.nn.functional as F
 
-from dataset   import BinDataset
-from model     import PinkyLM
-from tokenizer import SentencePieceTokenizer
+from src.dataset   import BinDataset
+from src.model     import PinkyLM
+from src.tokenizer import SentencePieceTokenizer
 
 TOKENIZER_PATH = 'data/tokenizers/fineweb_1024_bpe.model'
 VAL_PATH       = 'data/datasets/fineweb10B_sp1024/fineweb_val_000000.bin'

@@ -12,9 +12,9 @@ if _env.exists():
             k, v = line.split('=', 1)
             os.environ.setdefault(k.strip(), v.strip())
 
-from model     import PinkyLM
-from tokenizer import SentencePieceTokenizer
-from trainer   import Trainer, TrainerConfig
+from src.model     import PinkyLM
+from src.tokenizer import SentencePieceTokenizer
+from src.trainer   import Trainer, TrainerConfig
 
 
 def parse_args():
