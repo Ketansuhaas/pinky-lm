@@ -16,6 +16,7 @@ from src.dataset import make_loaders
 class TrainerConfig:
     steps          : int   = 5000
     eval_every     : int   = 500
+    log_every      : int   = 1
     block_size     : int   = 1024
     batch_size     : int   = 8
     lr             : float = 1e-3
@@ -157,11 +158,19 @@ class Trainer:
     def run(self):
         cfg        = self.config
         train_loss = 0.0
+        log_loss   = 0.0
         t0         = time.perf_counter()
 
         for _ in range(cfg.steps):
             self.step  += 1
-            train_loss += self._train_step()
+            step_loss   = self._train_step()
+            train_loss += step_loss
+            log_loss   += step_loss
+
+            if self.step % cfg.log_every == 0:
+                train_bpb_instant = (log_loss / cfg.log_every / math.log(2.0)) * self.tokens_per_byte
+                wandb.log({'train_bpb': train_bpb_instant}, step=self.step)
+                log_loss = 0.0
 
             if self.step % cfg.eval_every == 0:
                 dt          = time.perf_counter() - t0
@@ -183,7 +192,6 @@ class Trainer:
                     + " | ".join(f"{k} {v}" for k, v in mem_labels.items())
                 )
                 wandb.log({
-                    'train_bpb'  : train_bpb,
                     'val_bpb'    : val_bpb,
                     'tok_per_sec': tok_per_sec,
                     'step_ms'    : step_ms,

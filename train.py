@@ -24,6 +24,7 @@ def parse_args():
     parser.add_argument('--val',         default='data/datasets/fineweb10B_sp1024')
     parser.add_argument('--steps',       type=int,   default=5000)
     parser.add_argument('--eval-every',  type=int,   default=500)
+    parser.add_argument('--log-every',   type=int,   default=1)
     parser.add_argument('--block-size',  type=int,   default=1024)
     parser.add_argument('--batch-size',  type=int,   default=32)
     parser.add_argument('--lr',          type=float, default=1e-3)
@@ -56,6 +57,7 @@ if __name__ == '__main__':
     config  = TrainerConfig(
         steps=args.steps,
         eval_every=args.eval_every,
+        log_every=args.log_every,
         block_size=args.block_size,
         batch_size=args.batch_size,
         lr=args.lr,
