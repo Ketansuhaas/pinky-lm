@@ -107,22 +107,32 @@ class Trainer:
         val_bpb  = (val_loss / math.log(2.0)) * (token_count / byte_count)
         return val_loss, val_bpb
 
+    def _reset_peak_memory(self):
+        if self.config.device == 'cuda':
+            torch.cuda.reset_peak_memory_stats()
+
     def _memory_stats(self):
         stats  = {}
         labels = {}
+        total_ram = psutil.virtual_memory().total / 1024 ** 2
+
         if self.config.device == 'cuda':
             total = torch.cuda.get_device_properties(0).total_memory / 1024 ** 2
-            stats['gpu_mem_alloc_mb']    = torch.cuda.memory_allocated() / 1024 ** 2
-            stats['gpu_mem_reserved_mb'] = torch.cuda.memory_reserved() / 1024 ** 2
-            labels['gpu_mem_alloc_mb']    = f"{stats['gpu_mem_alloc_mb']:.0f}/{total:.0f} MB"
-            labels['gpu_mem_reserved_mb'] = f"{stats['gpu_mem_reserved_mb']:.0f}/{total:.0f} MB"
+            alloc = torch.cuda.memory_allocated()  / 1024 ** 2
+            peak  = torch.cuda.max_memory_allocated() / 1024 ** 2
+            stats['gpu_mem_alloc_mb'] = alloc
+            stats['gpu_mem_peak_mb']  = peak
+            labels['gpu_mem_alloc_mb'] = f"{alloc:.0f}/{total:.0f} MB"
+            labels['gpu_mem_peak_mb']  = f"peak {peak:.0f}/{total:.0f} MB"
         elif self.config.device == 'mps':
-            total = psutil.virtual_memory().total / 1024 ** 2  # unified memory
-            stats['mps_mem_alloc_mb']  = torch.mps.current_allocated_memory() / 1024 ** 2
-            stats['mps_mem_driver_mb'] = torch.mps.driver_allocated_memory() / 1024 ** 2
-            labels['mps_mem_alloc_mb']  = f"{stats['mps_mem_alloc_mb']:.0f}/{total:.0f} MB"
-            labels['mps_mem_driver_mb'] = f"{stats['mps_mem_driver_mb']:.0f}/{total:.0f} MB"
-        total_ram = psutil.virtual_memory().total / 1024 ** 2
+            total = psutil.virtual_memory().total / 1024 ** 2
+            alloc  = torch.mps.current_allocated_memory() / 1024 ** 2
+            driver = torch.mps.driver_allocated_memory()  / 1024 ** 2
+            stats['mps_mem_alloc_mb']  = alloc
+            stats['mps_mem_driver_mb'] = driver
+            labels['mps_mem_alloc_mb']  = f"{alloc:.0f}/{total:.0f} MB"
+            labels['mps_mem_driver_mb'] = f"driver {driver:.0f}/{total:.0f} MB"
+
         stats['cpu_ram_mb']  = psutil.Process().memory_info().rss / 1024 ** 2
         labels['cpu_ram_mb'] = f"{stats['cpu_ram_mb']:.0f}/{total_ram:.0f} MB"
         return stats, labels
@@ -183,6 +193,7 @@ class Trainer:
                 self.save_checkpoint(val_bpb)
                 train_loss = 0.0
                 t0         = time.perf_counter()
+                self._reset_peak_memory()  # reset peak so next interval measures fresh peak
 
         wandb.finish()
         print(f"\ntraining done. best checkpoint: {self.best_ckpt} (bpb {self.best_bpb:.4f})")
