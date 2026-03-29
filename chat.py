@@ -28,7 +28,7 @@ def parse_args():
     parser.add_argument('--checkpoint',  required=True, help='Path to .pt or .zlib checkpoint')
     parser.add_argument('--quantized',   action='store_true', help='Load as int8+zlib quantized checkpoint')
     parser.add_argument('--tokenizer',   default=TOKENIZER_PATH)
-    parser.add_argument('--block-size',  type=int, default=128)
+    parser.add_argument('--block-size',  type=int, default=1024)
     parser.add_argument('--embed-dim',   type=int, default=64)
     parser.add_argument('--n-heads',     type=int, default=4)
     parser.add_argument('--n-layers',    type=int, default=4)

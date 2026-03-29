@@ -24,7 +24,7 @@ def parse_args():
     parser.add_argument('--val',         default='data/datasets/fineweb10B_sp1024')
     parser.add_argument('--steps',       type=int,   default=5000)
     parser.add_argument('--eval-every',  type=int,   default=500)
-    parser.add_argument('--block-size',  type=int,   default=128)
+    parser.add_argument('--block-size',  type=int,   default=1024)
     parser.add_argument('--batch-size',  type=int,   default=32)
     parser.add_argument('--lr',          type=float, default=1e-3)
     parser.add_argument('--embed-dim',   type=int,   default=64)

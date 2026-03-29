@@ -27,7 +27,7 @@ def parse_args():
     parser.add_argument('--checkpoint',  required=True, help='Path to checkpoint .pt file')
     parser.add_argument('--tokenizer',   default=TOKENIZER_PATH)
     parser.add_argument('--val',         default=VAL_PATH)
-    parser.add_argument('--block-size',  type=int, default=128)
+    parser.add_argument('--block-size',  type=int, default=1024)
     parser.add_argument('--batch-size',  type=int, default=64)
     parser.add_argument('--embed-dim',   type=int, default=64)
     parser.add_argument('--n-heads',     type=int, default=4)

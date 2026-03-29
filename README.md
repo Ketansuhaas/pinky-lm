@@ -91,7 +91,7 @@ Commands during chat: `/temp <float>`, `/steps <int>`, `/quit`
 | Param       | Default |
 |-------------|---------|
 | vocab_size  | 1024    |
-| block_size  | 128     |
+| block_size  | 1024    |
 | embed_dim   | 64      |
 | n_heads     | 4       |
 | n_layers    | 4       |

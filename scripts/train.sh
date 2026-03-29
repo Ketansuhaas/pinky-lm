@@ -5,7 +5,7 @@ cd "$(dirname "$0")/.."
 python3 train.py \
     --steps 5000 \
     --eval-every 500 \
-    --block-size 128 \
+    --block-size 1024 \
     --batch-size 32 \
     --lr 1e-3 \
     --embed-dim 64 \
