@@ -1,6 +1,16 @@
 import argparse
+import os
+from pathlib import Path
 
 import torch
+
+# Load .env if present
+_env = Path(__file__).parent / '.env'
+if _env.exists():
+    for line in _env.read_text().splitlines():
+        if line and not line.startswith('#') and '=' in line:
+            k, v = line.split('=', 1)
+            os.environ.setdefault(k.strip(), v.strip())
 
 from model     import PinkyLM
 from tokenizer import SentencePieceTokenizer
@@ -57,5 +67,5 @@ if __name__ == '__main__':
         wandb_project=args.wandb_project,
         wandb_run_name=args.wandb_run_name,
     )
-    trainer = Trainer(model, config)
+    trainer = Trainer(model, tokenizer, config)
     trainer.run()

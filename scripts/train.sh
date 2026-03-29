@@ -2,8 +2,6 @@
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
-export $(cat .env | xargs)
-
 python3 train.py \
     --steps 5000 \
     --eval-every 500 \
