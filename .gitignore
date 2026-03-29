@@ -1,0 +1,6 @@
+checkpoints/
+data/datasets/
+data/tokenizers/
+__pycache__/
+*.pyc
+.venv/

@@ -1,0 +1,57 @@
+import argparse
+
+import torch
+
+from model     import PinkyLM
+from tokenizer import SentencePieceTokenizer
+from trainer   import Trainer, TrainerConfig
+
+
+def parse_args():
+    parser = argparse.ArgumentParser(description='Train PinkyLM on FineWeb')
+    parser.add_argument('--tokenizer',   default='data/tokenizers/fineweb_1024_bpe.model')
+    parser.add_argument('--train',       default='data/datasets/fineweb10B_sp1024/fineweb_train_000000.bin')
+    parser.add_argument('--val',         default='data/datasets/fineweb10B_sp1024/fineweb_val_000000.bin')
+    parser.add_argument('--steps',       type=int,   default=5000)
+    parser.add_argument('--eval-every',  type=int,   default=500)
+    parser.add_argument('--block-size',  type=int,   default=128)
+    parser.add_argument('--batch-size',  type=int,   default=32)
+    parser.add_argument('--lr',          type=float, default=1e-3)
+    parser.add_argument('--embed-dim',   type=int,   default=64)
+    parser.add_argument('--n-heads',     type=int,   default=4)
+    parser.add_argument('--n-layers',    type=int,   default=4)
+    parser.add_argument('--ckpt-dir',        default='checkpoints')
+    parser.add_argument('--max-val-batches', type=int, default=100)
+    return parser.parse_args()
+
+
+if __name__ == '__main__':
+    args      = parse_args()
+    device    = 'cuda' if torch.cuda.is_available() else 'mps' if torch.backends.mps.is_available() else 'cpu'
+    tokenizer = SentencePieceTokenizer(args.tokenizer)
+    model     = PinkyLM(
+        vocab_size=len(tokenizer),
+        block_size=args.block_size,
+        embed_dim=args.embed_dim,
+        n_heads=args.n_heads,
+        n_layers=args.n_layers,
+    )
+
+    print(f"vocab size:   {len(tokenizer)}")
+    print(f"model params: {sum(p.numel() for p in model.parameters()):,}")
+    print(f"device:       {device}\n")
+
+    config  = TrainerConfig(
+        steps=args.steps,
+        eval_every=args.eval_every,
+        block_size=args.block_size,
+        batch_size=args.batch_size,
+        lr=args.lr,
+        device=device,
+        ckpt_dir=args.ckpt_dir,
+        train_path=args.train,
+        val_path=args.val,
+        max_val_batches=args.max_val_batches,
+    )
+    trainer = Trainer(model, config)
+    trainer.run()
