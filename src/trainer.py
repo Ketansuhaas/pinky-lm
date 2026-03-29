@@ -17,7 +17,7 @@ class TrainerConfig:
     steps          : int   = 5000
     eval_every     : int   = 500
     block_size     : int   = 1024
-    batch_size     : int   = 32
+    batch_size     : int   = 8
     lr             : float = 1e-3
     grad_clip      : float = 1.0
     device         : str   = 'cpu'

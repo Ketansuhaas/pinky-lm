@@ -6,7 +6,7 @@ python3 train.py \
     --steps 5000 \
     --eval-every 500 \
     --block-size 1024 \
-    --batch-size 32 \
+    --batch-size 8 \
     --lr 1e-3 \
     --embed-dim 64 \
     --n-heads 4 \
