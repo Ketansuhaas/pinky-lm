@@ -110,8 +110,19 @@ def train(
     from src.tokenizer import SentencePieceTokenizer
     from src.trainer   import Trainer, TrainerConfig
 
+    import glob, numpy as np
     tokenizer_path = f"{DATA_DIR}/tokenizers/fineweb_1024_bpe.model"
     data_path      = f"{DATA_DIR}/datasets/fineweb10B_sp1024"
+
+    # Sanity check — print what we can find before training starts
+    print(f"tokenizer:  {tokenizer_path} exists={os.path.exists(tokenizer_path)}")
+    train_files = sorted(glob.glob(f"{data_path}/fineweb_train_*.bin"))
+    val_files   = sorted(glob.glob(f"{data_path}/fineweb_val_*.bin"))
+    print(f"train bins: {train_files}")
+    print(f"val bins:   {val_files}")
+    if train_files:
+        d = np.memmap(train_files[0], dtype=np.uint16, mode='r')
+        print(f"first shard: {len(d):,} tokens, min={d.min()}, max={d.max()}")
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
     print(f"device:     {device}")
