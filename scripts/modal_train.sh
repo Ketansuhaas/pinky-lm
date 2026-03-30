@@ -3,7 +3,7 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
-modal run modal_train.py \
+modal run --detach modal_train.py \
     --run         run-01 \
     --steps       5000 \
     --eval-every  500 \

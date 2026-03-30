@@ -31,7 +31,12 @@ image = (
         "psutil",
         "huggingface_hub",
     )
-    .add_local_dir(".", remote_path="/src", copy=True)
+    .add_local_dir(
+        ".",
+        remote_path="/src",
+        copy=True,
+        ignore=[".venv", "data", "checkpoints", "__pycache__", ".git", ".env", "*.pyc"],
+    )
 )
 
 # ---------------------------------------------------------------------------
