@@ -2,7 +2,6 @@
 Modal training for pinky-lm.
 
 Setup (one-time):
-    modal volume create pinky-lm-cache
     modal run modal_train.py::download_data
 
 Train:
@@ -20,7 +19,7 @@ import os
 import modal
 
 # ---------------------------------------------------------------------------
-# Image
+# Image — source code is baked in at build time via add_local_dir
 # ---------------------------------------------------------------------------
 
 image = (
@@ -32,15 +31,16 @@ image = (
         "psutil",
         "huggingface_hub",
     )
+    .add_local_dir(".", remote_path="/src", copy=True)
 )
 
 # ---------------------------------------------------------------------------
 # Persistent volume — stores data shards, tokenizer, and checkpoints
 # ---------------------------------------------------------------------------
 
-CACHE_DIR  = "/cache"
-DATA_DIR   = f"{CACHE_DIR}/data"
-CKPT_DIR   = f"{CACHE_DIR}/checkpoints"
+CACHE_DIR = "/cache"
+DATA_DIR  = f"{CACHE_DIR}/data"
+CKPT_DIR  = f"{CACHE_DIR}/checkpoints"
 
 volume = modal.Volume.from_name("pinky-lm-cache", create_if_missing=True)
 
@@ -53,7 +53,6 @@ app = modal.App("pinky-lm", image=image)
 @app.function(
     volumes={CACHE_DIR: volume},
     timeout=60 * 60 * 2,   # 2h
-    mounts=[modal.Mount.from_local_dir(".", remote_path="/src")],
 )
 def download_data(train_shards: int = 1, variant: str = "sp1024"):
     """Download FineWeb shards + tokenizer into the volume at /cache/data/."""
@@ -79,11 +78,10 @@ def download_data(train_shards: int = 1, variant: str = "sp1024"):
 # ---------------------------------------------------------------------------
 
 @app.function(
-    gpu="A10G",
+    gpu="T4",
     volumes={CACHE_DIR: volume},
     secrets=[modal.Secret.from_dotenv()],
     timeout=60 * 60 * 12,   # 12h max
-    mounts=[modal.Mount.from_local_dir(".", remote_path="/src")],
 )
 def train(
     run: str        = "",
@@ -97,7 +95,6 @@ def train(
     n_heads: int    = 4,
     n_layers: int   = 4,
     max_val_tokens: int = 500_000,
-    train_shards: int   = 1,
 ):
     import sys
     sys.path.insert(0, "/src")
@@ -160,7 +157,6 @@ def main(
     n_heads: int    = 4,
     n_layers: int   = 4,
     max_val_tokens: int = 500_000,
-    train_shards: int   = 1,
 ):
     train.remote(
         run=run,
@@ -174,5 +170,4 @@ def main(
         n_heads=n_heads,
         n_layers=n_layers,
         max_val_tokens=max_val_tokens,
-        train_shards=train_shards,
     )
