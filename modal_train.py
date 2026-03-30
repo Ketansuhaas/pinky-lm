@@ -26,6 +26,7 @@ image = (
     modal.Image.debian_slim(python_version="3.11")
     .pip_install(
         "torch==2.5.1",
+        "numpy",
         "sentencepiece",
         "wandb",
         "psutil",
