@@ -25,7 +25,7 @@ class TrainerConfig:
     ckpt_dir       : str   = 'checkpoints'
     train_path     : str   = ''
     val_path       : str   = ''
-    max_val_batches: int   = 100
+    max_val_tokens : int   = 500_000
     wandb_project  : str   = 'pinky-lm'
     wandb_run_name : str   = ''
 
@@ -54,16 +54,24 @@ class Trainer:
         self.val_loader   = val_loader
         self.train_iter   = iter(train_loader)
 
+        cfg_suffix = (
+            f"bs{config.batch_size}"
+            f"_seq{config.block_size}"
+            f"_lr{config.lr}"
+            f"_d{model.tok_embed.embedding_dim}"
+            f"_h{model.blocks[0].attn.n_heads}"
+            f"_l{len(model.blocks)}"
+        )
+        run_name = f"{config.wandb_run_name}_{cfg_suffix}" if config.wandb_run_name else cfg_suffix
         run = wandb.init(
             project=config.wandb_project,
-            name=config.wandb_run_name or None,
+            name=run_name,
             config=asdict(config),
             mode='online',
             dir='/tmp',
         )
-        timestamp      = datetime.now().strftime('%Y%m%d_%H%M%S')
-        run_name       = config.wandb_run_name or run.id
-        self.ckpt_dir  = os.path.join(config.ckpt_dir, f'{timestamp}_{run_name}')
+        timestamp     = datetime.now().strftime('%Y%m%d_%H%M%S')
+        self.ckpt_dir = os.path.join(config.ckpt_dir, f'{timestamp}_{run_name}')
         self.best_bpb  = float('inf')
         self.best_ckpt = None
 
@@ -89,7 +97,7 @@ class Trainer:
     @torch.no_grad()
     def _evaluate(self):
         self.model.eval()
-        loss_sum, token_count, byte_count, n = 0.0, 0, 0, 0
+        loss_sum, token_count, byte_count = 0.0, 0, 0
         for x, y in self.val_loader:
             x, y    = x.to(self.config.device), y.to(self.config.device)
             logits  = self.model(x)
@@ -101,8 +109,7 @@ class Trainer:
             tbytes  = self.base_bytes[tgt].to(torch.int32)
             tbytes += (self.has_leading_space[tgt] & ~self.is_boundary[prev]).to(torch.int32)
             byte_count += tbytes.sum().item()
-            n += 1
-            if n >= self.config.max_val_batches:
+            if token_count >= self.config.max_val_tokens:
                 break
         val_loss = loss_sum / token_count
         val_bpb  = (val_loss / math.log(2.0)) * (token_count / byte_count)
@@ -157,6 +164,7 @@ class Trainer:
 
     def run(self):
         cfg        = self.config
+        print("starting training (first step may be slow on MPS — shader compilation) ...", flush=True)
         train_loss = 0.0
         log_loss   = 0.0
         t0         = time.perf_counter()
@@ -167,9 +175,12 @@ class Trainer:
             train_loss += step_loss
             log_loss   += step_loss
 
+            log_payload = {}
+
             if self.step % cfg.log_every == 0:
                 train_bpb_instant = (log_loss / cfg.log_every / math.log(2.0)) * self.tokens_per_byte
-                wandb.log({'train_bpb': train_bpb_instant}, step=self.step)
+                log_payload['train_bpb'] = train_bpb_instant
+                print(f"  step {self.step:5d} | train_bpb {train_bpb_instant:.4f}", flush=True)
                 log_loss = 0.0
 
             if self.step % cfg.eval_every == 0:
@@ -191,17 +202,21 @@ class Trainer:
                     f"{step_ms:.1f} ms/step | "
                     + " | ".join(f"{k} {v}" for k, v in mem_labels.items())
                 )
-                wandb.log({
+                log_payload.update({
+                    'train_bpb'  : train_bpb,
                     'val_bpb'    : val_bpb,
                     'tok_per_sec': tok_per_sec,
                     'step_ms'    : step_ms,
                     **mem,
-                }, step=self.step)
+                })
 
                 self.save_checkpoint(val_bpb)
                 train_loss = 0.0
                 t0         = time.perf_counter()
-                self._reset_peak_memory()  # reset peak so next interval measures fresh peak
+                self._reset_peak_memory()
+
+            if log_payload:
+                wandb.log(log_payload, step=self.step)
 
         wandb.finish()
         print(f"\ntraining done. best checkpoint: {self.best_ckpt} (bpb {self.best_bpb:.4f})")

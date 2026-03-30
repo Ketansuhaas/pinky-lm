@@ -2,3 +2,5 @@ torch
 sentencepiece
 psutil
 wandb
+huggingface_hub
+modal

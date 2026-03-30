@@ -45,7 +45,7 @@ class SentencePieceTokenizer:
             base_bytes_np[token_id] = len(piece.encode('utf-8'))
 
         return (
-            torch.tensor(base_bytes_np,        dtype=torch.int16, device=device),
+            torch.tensor(base_bytes_np,        dtype=torch.int32, device=device),
             torch.tensor(has_leading_space_np, dtype=torch.bool,  device=device),
             torch.tensor(is_boundary_np,       dtype=torch.bool,  device=device),
         )
