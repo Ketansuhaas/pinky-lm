@@ -31,12 +31,12 @@ image = (
         "psutil",
         "huggingface_hub",
     )
-    .add_local_dir(
-        ".",
-        remote_path="/src",
-        copy=True,
-        ignore=[".venv", "data", "checkpoints", "__pycache__", ".git", ".env", "*.pyc"],
-    )
+    .add_local_dir("src", remote_path="/src/src", copy=True)
+    .add_local_file("data/cached_challenge_fineweb.py", "/src/data/cached_challenge_fineweb.py")
+    .add_local_file("train.py",          "/src/train.py")
+    .add_local_file("eval.py",           "/src/eval.py")
+    .add_local_file("eval_quantized.py", "/src/eval_quantized.py")
+    .add_local_file("quantize.py",       "/src/quantize.py")
 )
 
 # ---------------------------------------------------------------------------
