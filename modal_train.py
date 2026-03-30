@@ -16,7 +16,21 @@ Requires:
 """
 
 import os
+from pathlib import Path
 import modal
+
+# Read .env locally so we don't need python-dotenv
+def _load_env() -> dict:
+    env_file = Path(__file__).parent / ".env"
+    result = {}
+    if env_file.exists():
+        for line in env_file.read_text().splitlines():
+            if line and not line.startswith("#") and "=" in line:
+                k, v = line.split("=", 1)
+                result[k.strip()] = v.strip()
+    return result
+
+_env = _load_env()
 
 # ---------------------------------------------------------------------------
 # Image — source code is baked in at build time via add_local_dir
@@ -85,7 +99,7 @@ def download_data(train_shards: int = 1, variant: str = "sp1024"):
 @app.function(
     gpu="T4",
     volumes={CACHE_DIR: volume},
-    secrets=[modal.Secret.from_dotenv()],
+    secrets=[modal.Secret.from_dict(_env)],
     timeout=60 * 60 * 12,   # 12h max
 )
 def train(
