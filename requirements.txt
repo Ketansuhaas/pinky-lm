@@ -4,3 +4,4 @@ psutil
 wandb
 huggingface_hub
 modal
+python-dotenv
