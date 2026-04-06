@@ -3,8 +3,11 @@ Modal training for pinky-lm on tinyshakespeare.
 
 Usage:
     modal run modal_train.py::prepare
-    modal run modal_train.py::train
-    modal run modal_train.py::train --args "--n_layer 8 --n_embd 512 --max_iters 10000"
+    modal run modal_train.py
+    modal run modal_train.py --args "--n_layer 8 --n_embd 512 --max_iters 10000"
+
+The default entrypoint runs training and automatically downloads the best
+checkpoint to ./checkpoints/best.pt on the local machine when done.
 """
 
 import modal
@@ -17,7 +20,7 @@ TIKTOKEN_CACHE = "/data/tiktoken_cache"
 
 base_image = (
     modal.Image.debian_slim(python_version="3.11")
-    .pip_install("torch", "tiktoken", "numpy", "matplotlib", "wandb")
+    .pip_install("torch", "tiktoken", "numpy", "matplotlib", "wandb", "nvidia-ml-py")
 )
 
 train_image = base_image.add_local_file("train.py", "/root/train.py")
@@ -61,7 +64,7 @@ def prepare():
 wandb_secret = modal.Secret.from_dotenv(".env")
 
 
-@app.function(image=train_image, volumes={VOLUME_PATH: volume}, gpu="A10G", timeout=3600, secrets=[wandb_secret])
+@app.function(image=train_image, volumes={VOLUME_PATH: volume}, gpu="A100", timeout=3600, secrets=[wandb_secret])
 def train(args: str = ""):
     import subprocess
     import sys
@@ -78,4 +81,21 @@ def train(args: str = ""):
 
     subprocess.run(cmd, check=True)
     volume.commit()
-    print(f"Done. Checkpoint at {ckpt_dir}/best.pt")
+
+    ckpt_path = os.path.join(ckpt_dir, "best.pt")
+    with open(ckpt_path, "rb") as f:
+        return f.read()
+
+
+@app.local_entrypoint()
+def main(args: str = ""):
+    import os
+
+    ckpt_bytes = train.remote(args)
+
+    local_dir = "checkpoints"
+    os.makedirs(local_dir, exist_ok=True)
+    local_path = os.path.join(local_dir, "best.pt")
+    with open(local_path, "wb") as f:
+        f.write(ckpt_bytes)
+    print(f"Checkpoint downloaded → {local_path}")

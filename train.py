@@ -33,19 +33,15 @@ import wandb
 # ── Model ──────────────────────────────────────────────────────────────────
 
 class CausalSelfAttention(nn.Module):
-    def __init__(self, n_embd, n_head, block_size, dropout):
+    def __init__(self, n_embd, n_head, dropout):
         super().__init__()
         assert n_embd % n_head == 0
         self.n_head = n_head
         self.n_embd = n_embd
+        self.dropout = dropout
         self.c_attn = nn.Linear(n_embd, 3 * n_embd, bias=False)
         self.c_proj = nn.Linear(n_embd, n_embd, bias=False)
-        self.attn_drop = nn.Dropout(dropout)
         self.resid_drop = nn.Dropout(dropout)
-        self.register_buffer(
-            "bias",
-            torch.tril(torch.ones(block_size, block_size)).view(1, 1, block_size, block_size),
-        )
 
     def forward(self, x):
         B, T, C = x.shape
@@ -54,11 +50,8 @@ class CausalSelfAttention(nn.Module):
         k = k.view(B, T, nh, hs).transpose(1, 2)
         q = q.view(B, T, nh, hs).transpose(1, 2)
         v = v.view(B, T, nh, hs).transpose(1, 2)
-        att = (q @ k.transpose(-2, -1)) * (1.0 / math.sqrt(hs))
-        att = att.masked_fill(self.bias[:, :, :T, :T] == 0, float("-inf"))
-        att = F.softmax(att, dim=-1)
-        att = self.attn_drop(att)
-        y = (att @ v).transpose(1, 2).contiguous().view(B, T, C)
+        y = F.scaled_dot_product_attention(q, k, v, dropout_p=self.dropout if self.training else 0.0, is_causal=True)
+        y = y.transpose(1, 2).contiguous().view(B, T, C)
         return self.resid_drop(self.c_proj(y))
 
 
@@ -74,10 +67,10 @@ class MLP(nn.Module):
 
 
 class Block(nn.Module):
-    def __init__(self, n_embd, n_head, block_size, dropout):
+    def __init__(self, n_embd, n_head, dropout):
         super().__init__()
         self.ln1 = nn.LayerNorm(n_embd)
-        self.attn = CausalSelfAttention(n_embd, n_head, block_size, dropout)
+        self.attn = CausalSelfAttention(n_embd, n_head, dropout)
         self.ln2 = nn.LayerNorm(n_embd)
         self.mlp = MLP(n_embd, dropout)
 
@@ -94,7 +87,7 @@ class GPT(nn.Module):
         self.tok_emb = nn.Embedding(vocab_size, n_embd)
         self.pos_emb = nn.Embedding(block_size, n_embd)
         self.drop = nn.Dropout(dropout)
-        self.blocks = nn.Sequential(*[Block(n_embd, n_head, block_size, dropout) for _ in range(n_layer)])
+        self.blocks = nn.Sequential(*[Block(n_embd, n_head, dropout) for _ in range(n_layer)])
         self.ln_f = nn.LayerNorm(n_embd)
         self.head = nn.Linear(n_embd, vocab_size, bias=False)
         # Weight tying: share token embedding and output projection weights
@@ -147,15 +140,59 @@ def get_batch(data, block_size, batch_size, device):
 @torch.no_grad()
 def estimate_loss(model, train_data, val_data, block_size, batch_size, device, eval_iters):
     model.eval()
-    out = {}
-    for split, data in [("train", train_data), ("val", val_data)]:
-        losses = [
-            model(*get_batch(data, block_size, batch_size, device))[1].item()
-            for _ in range(eval_iters)
-        ]
-        out[split] = sum(losses) / len(losses)
+
+    # Train: random sampling (dataset too large to sweep)
+    train_losses = [
+        model(*get_batch(train_data, block_size, batch_size, device))[1].item()
+        for _ in range(eval_iters)
+    ]
+    train_loss = sum(train_losses) / len(train_losses)
+
+    # Val: full sequential sweep of non-overlapping windows — exact, reproducible
+    n_windows = (len(val_data) - 1) // block_size
+    total_loss, total_windows = 0.0, 0
+    for batch_start in range(0, n_windows, batch_size):
+        batch_end = min(batch_start + batch_size, n_windows)
+        xs = [torch.from_numpy(val_data[w * block_size : w * block_size + block_size].astype(np.int64)) for w in range(batch_start, batch_end)]
+        ys = [torch.from_numpy(val_data[w * block_size + 1 : w * block_size + block_size + 1].astype(np.int64)) for w in range(batch_start, batch_end)]
+        x = torch.stack(xs).to(device)
+        y = torch.stack(ys).to(device)
+        _, loss = model(x, y)
+        n = batch_end - batch_start
+        total_loss += loss.item() * n
+        total_windows += n
+    val_loss = total_loss / total_windows
+
     model.train()
-    return out
+    return {"train": train_loss, "val": val_loss}
+
+
+# ── GPU Metrics ────────────────────────────────────────────────────────────
+
+# A100 40GB peak FP32 throughput (19.5 TFLOPS)
+_A100_FP32_PEAK_FLOPS = 19.5e12
+
+
+def get_gpu_metrics(step_time, tokens_per_iter, n_params):
+    """
+    step_time: avg seconds per optimizer step over the last eval interval
+               (measured with CUDA events). None on the first eval.
+    """
+    if not torch.cuda.is_available():
+        return {}
+    allocated = torch.cuda.memory_allocated()
+    reserved  = torch.cuda.memory_reserved()
+    total     = torch.cuda.get_device_properties(torch.cuda.current_device()).total_memory
+    metrics = {
+        "gpu/mem_allocated_mb":    allocated / 1024 ** 2,
+        "gpu/mem_reserved_mb":     reserved  / 1024 ** 2,
+        "gpu/mem_utilization_pct": 100 * allocated / total,
+    }
+    if step_time is not None:
+        flops_per_step = 6 * n_params * tokens_per_iter   # fwd + bwd ≈ 6x params x tokens
+        metrics["gpu/tokens_per_sec"] = tokens_per_iter / step_time
+        metrics["gpu/mfu"]            = flops_per_step / (step_time * _A100_FP32_PEAK_FLOPS)
+    return metrics
 
 
 # ── LR Schedule ────────────────────────────────────────────────────────────
@@ -184,16 +221,23 @@ def main():
     parser.add_argument("--dropout", type=float, default=0.2)
     parser.add_argument("--batch_size", type=int, default=64)
     parser.add_argument("--max_iters", type=int, default=5000)
+    parser.add_argument("--max_tokens", type=int, default=None)
     parser.add_argument("--lr", type=float, default=1e-3)
     parser.add_argument("--min_lr", type=float, default=1e-4)
     parser.add_argument("--warmup_iters", type=int, default=100)
     parser.add_argument("--grad_clip", type=float, default=1.0)
     parser.add_argument("--eval_interval", type=int, default=250)
     parser.add_argument("--eval_iters", type=int, default=100)
+    parser.add_argument("--grad_accum_steps", type=int, default=1)
     parser.add_argument("--resume", type=str, default=None)
     parser.add_argument("--wandb_project", type=str, default="pinky-lm")
     parser.add_argument("--wandb_run", type=str, default=None)
     args = parser.parse_args()
+
+    tokens_per_iter = args.batch_size * args.block_size * args.grad_accum_steps
+    if args.max_tokens is not None:
+        args.max_iters = args.max_tokens // tokens_per_iter
+        print(f"max_tokens={args.max_tokens:,} → max_iters={args.max_iters:,} ({tokens_per_iter:,} tokens/iter)")
 
     device = "cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu"
     print(f"Device: {device}")
@@ -217,8 +261,8 @@ def main():
 
     wandb.init(
         project=args.wandb_project,
-        name=args.wandb_run,
-        config={**vars(args), "n_params": n_params},
+        name=f"l{args.n_layer}_e{args.n_embd}_h{args.n_head}_bs{args.batch_size}_lr{args.lr:.0e}",
+        config={**vars(args), "n_params": n_params, "effective_batch_size": args.batch_size * args.grad_accum_steps, "tokens_per_iter": tokens_per_iter},
     )
 
     start_iter = 0
@@ -234,25 +278,40 @@ def main():
     best_val_loss = float("inf")
     t0 = time.time()
 
+    # CUDA event timing: measure GPU time across each eval interval
+    if device == "cuda":
+        _interval_start = torch.cuda.Event(enable_timing=True)
+        _interval_end   = torch.cuda.Event(enable_timing=True)
+        _interval_start.record()
+    avg_step_time = None  # seconds/step; None until first interval completes
+
     for it in range(start_iter, args.max_iters + 1):
         lr = get_lr(it, args.max_iters, args.warmup_iters, args.lr, args.min_lr)
         for pg in optimizer.param_groups:
             pg["lr"] = lr
 
         if it % args.eval_interval == 0:
+            # Capture GPU time for this interval before entering eval (which uses GPU too)
+            if device == "cuda" and it > 0:
+                _interval_end.record()
+                torch.cuda.synchronize()
+                avg_step_time = _interval_start.elapsed_time(_interval_end) / 1000 / args.eval_interval
+                _interval_start.record()
+
             losses = estimate_loss(
                 model, train_data, val_data, args.block_size, args.batch_size, device, args.eval_iters
             )
             elapsed = time.time() - t0
+            tps_str = f" | {tokens_per_iter / avg_step_time:,.0f} tok/s" if avg_step_time else ""
             print(
                 f"iter {it:5d} | train {losses['train']:.4f} | val {losses['val']:.4f}"
-                f" | lr {lr:.2e} | {elapsed:.1f}s"
+                f" | lr {lr:.2e} | {elapsed:.1f}s{tps_str}"
             )
             train_losses.append(losses["train"])
             val_losses.append(losses["val"])
             loss_iters.append(it)
 
-            wandb.log({"train/loss": losses["train"], "val/loss": losses["val"], "lr": lr}, step=it)
+            wandb.log({"train/loss": losses["train"], "val/loss": losses["val"], "lr": lr, "tokens_seen": it * tokens_per_iter, **get_gpu_metrics(avg_step_time, tokens_per_iter, n_params)}, step=it)
 
             if losses["val"] < best_val_loss:
                 best_val_loss = losses["val"]
@@ -265,10 +324,11 @@ def main():
         if it == args.max_iters:
             break
 
-        x, y = get_batch(train_data, args.block_size, args.batch_size, device)
-        _, loss = model(x, y)
-        optimizer.zero_grad()
-        loss.backward()
+        optimizer.zero_grad(set_to_none=True)
+        for micro_step in range(args.grad_accum_steps):
+            x, y = get_batch(train_data, args.block_size, args.batch_size, device)
+            _, loss = model(x, y)
+            (loss / args.grad_accum_steps).backward()
         if args.grad_clip > 0:
             nn.utils.clip_grad_norm_(model.parameters(), args.grad_clip)
         optimizer.step()
