@@ -1,7 +1,5 @@
 torch
-sentencepiece
-psutil
-wandb
-huggingface_hub
+tiktoken
+numpy
+matplotlib
 modal
-python-dotenv
