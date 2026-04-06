@@ -25,16 +25,15 @@ def main():
 
     with open(input_path, "r") as f:
         text = f.read()
-    print(f"Dataset size: {len(text):,} characters")
+    print(f"Dataset: {len(text):,} characters")
+
+    n = len(text)
+    train_text = text[:int(n * 0.9)]
+    val_text = text[int(n * 0.9):]
 
     enc = tiktoken.get_encoding("gpt2")
-    tokens = enc.encode_ordinary(text)
-    tokens = np.array(tokens, dtype=np.uint16)
-    print(f"Tokenized: {len(tokens):,} tokens (vocab size: {enc.n_vocab})")
-
-    split = int(0.9 * len(tokens))
-    train_tokens = tokens[:split]
-    val_tokens = tokens[split:]
+    train_tokens = np.array(enc.encode_ordinary(train_text), dtype=np.uint16)
+    val_tokens = np.array(enc.encode_ordinary(val_text), dtype=np.uint16)
 
     train_path = os.path.join(DATA_DIR, "train.bin")
     val_path = os.path.join(DATA_DIR, "val.bin")
@@ -43,6 +42,7 @@ def main():
 
     print(f"Train: {len(train_tokens):,} tokens → {train_path}")
     print(f"Val:   {len(val_tokens):,} tokens → {val_path}")
+    # expected: train ~301,966 tokens, val ~36,059 tokens
 
 
 if __name__ == "__main__":

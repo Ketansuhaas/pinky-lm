@@ -13,10 +13,11 @@ app = modal.App("pinky-lm")
 
 volume = modal.Volume.from_name("pinky-lm-data", create_if_missing=True)
 VOLUME_PATH = "/data"
+TIKTOKEN_CACHE = "/data/tiktoken_cache"
 
 base_image = (
     modal.Image.debian_slim(python_version="3.11")
-    .pip_install("torch", "tiktoken", "numpy", "matplotlib")
+    .pip_install("torch", "tiktoken", "numpy", "matplotlib", "wandb")
 )
 
 train_image = base_image.add_local_file("train.py", "/root/train.py")
@@ -29,6 +30,9 @@ def prepare():
     import numpy as np
     import tiktoken
 
+    os.environ["TIKTOKEN_CACHE_DIR"] = TIKTOKEN_CACHE
+    os.makedirs(TIKTOKEN_CACHE, exist_ok=True)
+
     DATA_URL = "https://raw.githubusercontent.com/karpathy/char-rnn/master/data/tinyshakespeare/input.txt"
 
     print("Downloading tinyshakespeare...")
@@ -38,24 +42,32 @@ def prepare():
         text = f.read()
     print(f"Dataset: {len(text):,} characters")
 
-    enc = tiktoken.get_encoding("gpt2")
-    tokens = np.array(enc.encode_ordinary(text), dtype=np.uint16)
-    print(f"Tokenized: {len(tokens):,} tokens")
+    n = len(text)
+    train_text = text[:int(n * 0.9)]
+    val_text = text[int(n * 0.9):]
 
-    split = int(0.9 * len(tokens))
-    tokens[:split].tofile(os.path.join(VOLUME_PATH, "train.bin"))
-    tokens[split:].tofile(os.path.join(VOLUME_PATH, "val.bin"))
-    print(f"Train: {split:,} | Val: {len(tokens) - split:,}")
+    enc = tiktoken.get_encoding("gpt2")
+    train_tokens = np.array(enc.encode_ordinary(train_text), dtype=np.uint16)
+    val_tokens = np.array(enc.encode_ordinary(val_text), dtype=np.uint16)
+
+    train_tokens.tofile(os.path.join(VOLUME_PATH, "train.bin"))
+    val_tokens.tofile(os.path.join(VOLUME_PATH, "val.bin"))
+    print(f"Train: {len(train_tokens):,} tokens | Val: {len(val_tokens):,} tokens")
 
     volume.commit()
     print("Saved to volume.")
 
 
-@app.function(image=train_image, volumes={VOLUME_PATH: volume}, gpu="A10G", timeout=3600)
+wandb_secret = modal.Secret.from_dotenv(".env")
+
+
+@app.function(image=train_image, volumes={VOLUME_PATH: volume}, gpu="A10G", timeout=3600, secrets=[wandb_secret])
 def train(args: str = ""):
     import subprocess
     import sys
     import os
+
+    os.environ["TIKTOKEN_CACHE_DIR"] = TIKTOKEN_CACHE
 
     ckpt_dir = os.path.join(VOLUME_PATH, "checkpoints")
     cmd = [

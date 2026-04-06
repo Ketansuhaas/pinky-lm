@@ -2,4 +2,5 @@ torch
 tiktoken
 numpy
 matplotlib
+wandb
 modal

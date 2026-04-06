@@ -12,11 +12,22 @@ import os
 import math
 import argparse
 import time
+from pathlib import Path
 import numpy as np
 import torch
 import torch.nn as nn
 from torch.nn import functional as F
 import matplotlib.pyplot as plt
+
+# Load .env if present
+_env = Path(__file__).parent / ".env"
+if _env.exists():
+    for line in _env.read_text().splitlines():
+        if line and not line.startswith("#") and "=" in line:
+            k, v = line.split("=", 1)
+            os.environ.setdefault(k.strip(), v.strip())
+
+import wandb
 
 
 # ── Model ──────────────────────────────────────────────────────────────────
@@ -180,6 +191,8 @@ def main():
     parser.add_argument("--eval_interval", type=int, default=250)
     parser.add_argument("--eval_iters", type=int, default=100)
     parser.add_argument("--resume", type=str, default=None)
+    parser.add_argument("--wandb_project", type=str, default="pinky-lm")
+    parser.add_argument("--wandb_run", type=str, default=None)
     args = parser.parse_args()
 
     device = "cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu"
@@ -199,7 +212,14 @@ def main():
         n_embd=args.n_embd,
         dropout=args.dropout,
     ).to(device)
-    print(f"Parameters: {sum(p.numel() for p in model.parameters()):,}")
+    n_params = sum(p.numel() for p in model.parameters())
+    print(f"Parameters: {n_params:,}")
+
+    wandb.init(
+        project=args.wandb_project,
+        name=args.wandb_run,
+        config={**vars(args), "n_params": n_params},
+    )
 
     start_iter = 0
     if args.resume:
@@ -231,6 +251,8 @@ def main():
             train_losses.append(losses["train"])
             val_losses.append(losses["val"])
             loss_iters.append(it)
+
+            wandb.log({"train/loss": losses["train"], "val/loss": losses["val"], "lr": lr}, step=it)
 
             if losses["val"] < best_val_loss:
                 best_val_loss = losses["val"]
